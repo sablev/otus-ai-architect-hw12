@@ -1,0 +1,229 @@
+model {
+  system onec {
+    #external
+    title '1С: чеки и заказы'
+    description 'Существующий обмен с Bitrix раз в 15 минут. Новый прямой опрос 1С не вводится.'
+  }
+  system bitrix {
+    #external
+    title 'Сайт TechnoMart / Bitrix'
+    technology 'PHP, MySQL'
+    description 'Чеки из 1С и существующий контур выгрузки ERP-каталога. Место формирования XML и транспорт уточняются.'
+  }
+  database replica {
+    #external
+    title 'Read-only реплика MySQL'
+    description 'Read-only копия MySQL для выгрузок. Наличие реплики ещё не подтверждено.'
+  }
+  processor widget {
+    #online
+    title 'Recommendation Widget'
+    description 'Показы и клики с request_id и A/B-рукавом. Отправка вне бюджета ответа.'
+  }
+  processor collector {
+    #async
+    title 'Event Collector'
+    technology 'Go, HTTP'
+    description 'Валидация и минимизация полей. Событие и outbox записываются одной транзакцией.'
+  }
+  database rawEvents {
+    title 'Raw Event Store + Outbox'
+    technology 'PostgreSQL'
+    description 'Уникальный event_id; событие и outbox после COMMIT. Источник повторной обработки.'
+  }
+  processor relay {
+    #async
+    title 'Outbox Relay'
+    description 'Публикация с confirm. Повторная доставка допустима и требует дедупликации.'
+  }
+  processor broker {
+    #async
+    title 'Очередь принятых событий'
+    technology 'RabbitMQ'
+    description 'Durable queue, persistent messages. Publisher confirms и manual ACK.'
+  }
+  processor consumer {
+    #async
+    title 'Event Batch Consumer'
+    technology 'Python'
+    description 'Батчи принятых событий в S3. ACK после записи; дедупликация по event_id.'
+  }
+  processor legacy {
+    #async
+    title 'Legacy Ingestion Adapter'
+    technology 'Airflow, Python'
+    description 'XML ERP-каталога раз в сутки через существующий контур; чеки раз в 15 минут. Прямые ПДн удаляются до ML-raw.'
+  }
+  database rawLake {
+    title 'Data Lake / Raw'
+    technology 'S3-совместимый Object Storage'
+    description 'Неизменяемые минимизированные снимки и события. Время источника сохранено.'
+  }
+  processor clean {
+    #async
+    title 'Очистка и Data Quality'
+    technology 'Airflow, Python, DuckDB'
+    description 'Схема, дедупликация и нормализация. Микробатч 5 минут — допущение.'
+  }
+  database quarantine {
+    #quality
+    title 'Quarantine'
+    technology 'S3, закрытый доступ'
+    description 'Отклонённые записи и причины DQ. Закрытый доступ; в модели не поступают.'
+  }
+  database curated {
+    title 'Data Lake / Curated'
+    technology 'S3, Parquet'
+    description 'Очищенные каталог, чеки и события. Версионированные снимки Parquet.'
+  }
+  processor featureBuilder {
+    #async
+    title 'Feature & Mart Builder'
+    technology 'Airflow, Python, DuckDB'
+    description 'Единые преобразования item features. Сессионные и identity-витрины — в PostgreSQL.'
+  }
+  database registry {
+    title 'Feature definitions'
+    technology 'Git, Feast registry'
+    description 'Версии преобразований, Feature View и Feature Service. Источники в Git.'
+  }
+  database offlineFeatures {
+    title 'Feature Store / Offline'
+    technology 'Feast, S3 Parquet, DuckDB'
+    description 'Staged-снимки для materialization. Published-история с available_at для PIT.'
+  }
+  processor materializer {
+    #async
+    title 'Feature Materializer'
+    technology 'Feast'
+    description 'Staged → Redis по (product_id, feature_snapshot_id). Время источника не меняется.'
+  }
+  database onlineFeatures {
+    title 'Feature Store / Online'
+    technology 'Feast, отдельный Redis'
+    description 'Неизменяемые снимки item features. Отдельный Redis; TTL не равен freshness.'
+  }
+  processor offlinePipeline {
+    #async
+    title 'Offline Recommendation Pipeline'
+    technology 'Airflow, Python'
+    description 'Item-to-item обучается по корзинам; признаки — для построения и PIT-оценки кандидатов. Онлайн-ранжирование по правилам.'
+  }
+  database releases {
+    title 'Модели и release_manifest'
+    technology 'S3, версионированные артефакты'
+    description 'Модель, датасет, feature_snapshot_id и версии определений. Pinned model/index для rollback.'
+  }
+  processor publisher {
+    #quality
+    title 'Release Publisher'
+    description 'Gates → active_release + ledger атомарно в Redis. Архив ledger обогащает PIT-историю.'
+  }
+  database cache {
+    title 'Recommendations Cache'
+    technology 'Redis'
+    description 'Наборы, тексты, active_release и publication ledger. Текст под set_version, иначе шаблон.'
+  }
+  database sqlDb {
+    title 'Операционные витрины'
+    technology 'PostgreSQL'
+    description 'Каталог, профили, сегменты, исключения. Identified — только после подтверждения cross-ID.'
+  }
+  processor serving {
+    #online
+    title 'Recommendation Serving API'
+    technology 'FastAPI, rule-based Ranking'
+    description 'Rule-based ranking, проверка версии и freshness. Без LLM/Qdrant; 200 мс — цель.'
+  }
+  processor backend {
+    #online
+    title 'Recommendation Backend'
+    description 'Псевдоним и A/B-рукав. Control и деградация используют rule-based fallback.'
+  }
+  processor embeddingJob {
+    #async
+    title 'Embedding Job'
+    technology 'Python, фиксированный embedder'
+    description 'Снимок каталога → эмбеддинги. Фиксированы модель, нормализация и размерность.'
+  }
+  database candidateIndex {
+    title 'Qdrant / Candidate collection'
+    technology 'Qdrant'
+    description 'Новая коллекция под embedding/catalog version. До gates не используется.'
+  }
+  processor indexPublisher {
+    #quality
+    title 'Index Quality Gate'
+    description 'Проверки SKU, размерности и поиска. Alias атомарен только внутри Qdrant.'
+  }
+  database vectorDb {
+    title 'Vector DB / Active collection'
+    technology 'Qdrant, alias'
+    description 'Qdrant из ДЗ 05: поиск похожих товаров по эмбеддингам с фильтрацией по атрибутам. Выпуск закрепляет collection + embedder.'
+  }
+  processor generator {
+    #async
+    title 'Description Generation Worker'
+    description 'Промпт по каталогу и set_version. Без ПДн и идентификаторов покупателей.'
+  }
+  processor llm {
+    #async
+    title 'LLM Inference Service'
+    technology 'vLLM, self-hosted'
+    description 'Self-hosted по ADR-009. Генерирует черновик, публикацию не разрешает.'
+  }
+  processor factChecker {
+    #quality
+    title 'Fact Checker / Description Publisher'
+    description 'Проверка по тому же снимку каталога. Только пригодный текст под set_version.'
+  }
+
+  // Везде показано направление данных, а не инициатор сетевого вызова.
+  onec -> bitrix 'Чеки / 15 мин'
+  bitrix -> replica 'Копия MySQL'
+  widget -> collector 'События'
+  collector -> rawEvents 'Событие + outbox'
+  rawEvents -> relay 'Неотправленные записи'
+  relay -> broker 'Принятые события'
+  broker -> consumer 'Сообщения'
+  consumer -> rawLake 'Батчи событий'
+  bitrix -> legacy 'XML ERP-каталога / сутки'
+  replica -> legacy 'Чеки / 15 мин'
+  legacy -> rawLake 'Минимизированные снимки'
+  rawLake -> clean 'Raw-данные'
+  clean -> quarantine 'Ошибки DQ'
+  clean -> curated 'Очищенный Parquet'
+
+  curated -> featureBuilder 'Каталог и события'
+  registry -> featureBuilder 'Определения'
+  featureBuilder -> offlineFeatures 'Staged-снимок'
+  featureBuilder -> sqlDb 'Операционные витрины'
+  offlineFeatures -> materializer 'Staged-признаки'
+  registry -> materializer 'Feature Service'
+  materializer -> onlineFeatures 'Снимок по составному ключу'
+  curated -> offlinePipeline 'Чеки и события'
+  offlineFeatures -> offlinePipeline 'Признаки кандидатов / PIT-оценка'
+  offlinePipeline -> releases 'Модель и кандидаты'
+  releases -> publisher 'Манифест выпуска'
+  publisher -> cache 'Наборы + active_release + ledger'
+  publisher -> offlineFeatures 'Архив ledger / available_at'
+  backend -> serving 'Контекст / псевдоним'
+  sqlDb -> serving 'Identity и исключения'
+  onlineFeatures -> serving 'Признаки выбранного снимка'
+  cache -> serving 'Активный выпуск, наборы и тексты'
+
+  curated -> embeddingJob 'Снимок каталога'
+  embeddingJob -> candidateIndex 'Эмбеддинги'
+  candidateIndex -> indexPublisher 'Новая коллекция'
+  indexPublisher -> vectorDb 'Проверенная версия / alias'
+  indexPublisher -> releases 'Pinned model + collection'
+  vectorDb -> offlinePipeline 'Похожие товары'
+  releases -> generator 'Набор и pinned-версии'
+  curated -> generator 'Атрибуты снимка'
+  vectorDb -> generator 'Контекст товаров'
+  generator -> llm 'Промпт без ПДн'
+  llm -> factChecker 'Черновик описания'
+  generator -> factChecker 'set_version и ссылки на атрибуты'
+  curated -> factChecker 'Эталонные атрибуты'
+  factChecker -> cache 'Проверенный текст'
+}

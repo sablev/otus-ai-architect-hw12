@@ -1,0 +1,70 @@
+views {
+  global style dataContours
+
+  view index {
+    title 'TechnoMart / Приём и очистка данных'
+    description """
+      **Стрелки показывают направление данных.** Raw, Curated и Quarantine —
+      слои одного Data Lake; несколько этапов могут выполняться в одном Airflow.
+      Outbox и RabbitMQ добавлены к контуру ДЗ 05; доставка допускает повторы.
+      Прямые ПДн удаляются до ML-raw.
+
+      XML ERP-каталога показан через существующий контур Bitrix; место
+      формирования и транспорт уточняются. Реплика MySQL — допущение.
+      Микробатч раз в 5 минут не ускоряет обновление исходных систем.
+      Серый — legacy, зелёный — online, жёлтый — фоновые задачи,
+      красный — контроль качества, синий — хранилища.
+
+      [Контракты доставки](https://github.com/sablev/otus-ai-architect-hw12/blob/main/DESIGN_NOTES.md#доставка-и-повторная-обработка).
+      """
+    autoLayout TopBottom 60 45
+    include onec, bitrix, replica, widget, collector, rawEvents, relay, broker,
+      consumer, legacy, rawLake, clean, quarantine, curated
+  }
+
+  view features-serving {
+    title 'TechnoMart / Признаки, обучение и онлайн-выдача'
+    description """
+      **Стрелки показывают направление данных.** Item-to-item обучается
+      по корзинам; Feature Store хранит признаки для построения и исторической
+      оценки кандидатов. Serving использует те же определения и снимок
+      активного релиза для ранжирования по правилам. Профили, сегменты
+      и исключения остаются в PostgreSQL.
+
+      Staged-снимки нужны для материализации и подготовки кандидатов;
+      историческая оценка использует опубликованные снимки. Ключ Feast —
+      (product_id, feature_snapshot_id). Обратная дуга от Publisher архивирует
+      журнал активаций: available_at отражает фактическую публикацию.
+      Serving фиксирует active_release на запрос. Общей транзакции хранилищ
+      нет; версии закрепляет release_manifest.
+
+      [Время, версии и публикация](https://github.com/sablev/otus-ai-architect-hw12/blob/main/DESIGN_NOTES.md#feature-store-время-версии-и-публикация).
+      """
+    autoLayout TopBottom 60 45
+    include curated, featureBuilder, registry, offlineFeatures, materializer,
+      onlineFeatures, offlinePipeline, releases, publisher, cache, sqlDb,
+      serving, backend
+  }
+
+  view embeddings-generation {
+    title 'TechnoMart / Эмбеддинги и предгенерация описаний'
+    description """
+      **Все этапы — офлайн; стрелки показывают направление данных.** Candidate
+      и Active — коллекции одного Qdrant. Эмбеддинги строятся по очищенному
+      каталогу; фиксируются модель, нормализация, размерность и catalog_version.
+      Qdrant из ДЗ 05 поддерживает поиск с фильтрацией по атрибутам.
+
+      Манифест закрепляет коллекцию и эмбеддер; переключение alias атомарно
+      внутри Qdrant. Generator передаёт Fact Checker версию набора и ссылки
+      на атрибуты, LLM — черновик текста через worker. Промпт не содержит ПДн
+      и идентификаторов покупателей. Fact Checker сверяет текст с тем же
+      снимком каталога; неподходящий или отсутствующий текст заменяется шаблоном.
+      Serving не вызывает LLM и Qdrant.
+
+      [Публикация и откат](https://github.com/sablev/otus-ai-architect-hw12/blob/main/DESIGN_NOTES.md#согласованный-релиз).
+      """
+    autoLayout TopBottom 60 45
+    include curated, embeddingJob, candidateIndex, indexPublisher, vectorDb,
+      offlinePipeline, releases, generator, llm, factChecker, cache
+  }
+}

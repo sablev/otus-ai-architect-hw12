@@ -1,0 +1,8 @@
+{
+  "$schema": "https://likec4.dev/schemas/config.json",
+  "name": "technomart-data-pipelines-hw12",
+  "title": "TechnoMart — потоки данных",
+  "landingPage": {
+    "redirect": true
+  }
+}

@@ -1,0 +1,16 @@
+services:
+  likec4:
+    image: likec4/likec4:1.59.3
+    container_name: hw12-likec4
+    init: true
+    command: start --listen 0.0.0.0 --port 5173 --hmr-port 24702 /data
+    working_dir: /data
+    ports:
+      - "127.0.0.1:5175:5173"
+      - "127.0.0.1:24702:24702"
+    environment:
+      CHOKIDAR_USEPOLLING: "1"
+      CHOKIDAR_INTERVAL: "200"
+    volumes:
+      - ./:/data
+    restart: unless-stopped

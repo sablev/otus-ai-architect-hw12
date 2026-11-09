@@ -1,0 +1,15 @@
+# Собранный сайт GitHub Pages
+site/
+likec4/dist/
+
+# Локальные инструменты и настройки
+node_modules/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+
+# Системные файлы
+.DS_Store
+Thumbs.db

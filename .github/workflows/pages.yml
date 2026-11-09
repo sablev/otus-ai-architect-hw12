@@ -1,0 +1,45 @@
+name: Build and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Базовый путь соответствует имени репозитория; hash-маршруты
+      # позволяют открывать представления напрямую на GitHub Pages.
+      - name: Build LikeC4 static site
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE/likec4:/data" \
+            likec4/likec4:1.59.3 \
+            build --base "/${GITHUB_REPOSITORY#*/}/" --use-hash-history \
+            -o /data/dist
+          sudo mv likec4/dist site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

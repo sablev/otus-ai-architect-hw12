@@ -1,0 +1,18 @@
+specification {
+  element system
+  element processor
+  element database { style { shape storage } }
+  tag external
+  tag async
+  tag online
+  tag quality
+}
+
+global {
+  styleGroup dataContours {
+    style element.tag = #external { color muted }
+    style element.tag = #async { color amber }
+    style element.tag = #online { color green }
+    style element.tag = #quality { color red }
+  }
+}
